@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xml>
+
+	<!-- 单数据实例上开多个binlog订阅,必须保证clientId不同 -->
+	<database dbInstanceName="dsp-ad"
+		url="jdbc:mysql://127.0.0.1:3306" username="root" password="root"
+		clientId="2">
+		<db name="dsp">
+			<table subTable="idea_ext_audit"
+				filterTimeChange="last_modify_time,create_time,adx_audit_modify_time,upload_time,audit_times" />
+			<!-- <table subTable="idea_info" /> -->
+		</db>
+	</database>
+</xml>

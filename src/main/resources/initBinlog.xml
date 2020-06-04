@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xml>
+	<!-- 1) 单数据实例上开多个binlog订阅,必须保证clientId不同 -->
+	<!-- 2) dbInstanceName每个数据库实例单独设置名称 -->
+	<!-- 3) acceptEvent 即关注的数据库变更事件,例如订阅只关注更新事件(用于大表频繁产生删除或更新事件时忽略掉某些事件) -->
+	<database dbInstanceName="dsp-ad"
+		url="jdbc:mysql://127.0.0.1:3306" username="root" password="root"
+		clientId="2" acceptEvent="" fromBinlogFile="" fromBinlogOffset="">
+		<db name="dsp">
+			<table subTable="idea_ext_audit"
+				filterTimeChange="last_modify_time,create_time,adx_audit_modify_time,upload_time,audit_times" />
+			<table subTable="idea_info" />
+		</db>
+	</database>
+</xml>

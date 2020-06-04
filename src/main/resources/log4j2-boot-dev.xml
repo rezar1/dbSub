@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration status="INFO">
+	<Appenders>
+		<Console name="stout" target="SYSTEM_OUT">
+			<PatternLayout
+				pattern="[%-5level] %d{yyyy-MM-dd HH:mm:ss.SSS} [%t] %c{1} - %msg %X{LOGID}%n" />
+		</Console>
+	</Appenders>
+	<Loggers>
+		<AsyncRoot level="info" additivity="false" includeLocation="true">
+			<AppenderRef ref="stout" />
+		</AsyncRoot>
+	</Loggers>
+</configuration>

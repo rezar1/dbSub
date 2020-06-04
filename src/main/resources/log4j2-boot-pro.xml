@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration status="INFO">
+	<Appenders>
+		<RollingFile name="error" fileName="logs/error.log"
+			filePattern="logs/error.log.%d{yyyy-MM-dd}.log">
+			<PatternLayout charset='utf-8'>
+				<pattern>%d{yyyy-MM-dd HH:mm:ss.SSS}\t%X{logger_id}\t%5p\t%t\t%c{1}:%L - %m%n</pattern>
+			</PatternLayout>
+			<Policies>
+				<TimeBasedTriggeringPolicy interval="1"
+					modulate="true" />
+			</Policies>
+		</RollingFile>
+		<RollingFile name="binlog"
+			fileName="logs/binlog.log"
+			filePattern="logs/binlog.log.%d{yyyy-MM-dd}">
+			<PatternLayout charset='utf-8'>
+				<pattern>%d{yyyy-MM-dd HH:mm:ss.SSS}\t%X{logger_id}\t%5p\t%t\t%c{1} - %m%n</pattern>
+			</PatternLayout>
+			<Policies>
+				<TimeBasedTriggeringPolicy interval="1"
+					modulate="true" />
+			</Policies>
+		</RollingFile>
+	</Appenders>
+	<Loggers>
+		<AsyncRoot level="info" additivity="false" includeLocation="true">
+			<AppenderRef ref="binlog"  />
+			<AppenderRef ref="error" level="error" />
+		</AsyncRoot>
+	</Loggers>
+</configuration>

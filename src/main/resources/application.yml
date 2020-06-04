@@ -1,0 +1,26 @@
+spring:
+    application:
+      name: web-capture
+    banner:
+      location: classpath:show.txt
+    profiles:
+      active: prod  # 切换配置
+    
+      
+---
+# 开发环境
+logging:
+  config: classpath:log4j2-boot-dev.xml
+spring:
+    profiles: dev
+ 
+---   
+# 正式环境
+logging:
+  config: classpath:log4j2-boot-pro.xml
+spring:
+    profiles: prod
+    
+
+      
+      
