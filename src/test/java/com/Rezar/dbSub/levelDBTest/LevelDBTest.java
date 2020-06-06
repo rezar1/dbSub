@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.util.Map.Entry;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.commons.io.FileUtils;
 import org.iq80.leveldb.DB;
@@ -26,13 +27,102 @@ import lombok.extern.slf4j.Slf4j;
 public class LevelDBTest {
 
 	public static void main(String[] args) throws IOException, InterruptedException {
-		testIteratorForIdeaExtAudit();
+		testCloseAndIteartor();
+//		testIteratorForIdeaExtAudit();
 //		testIteratorAfterClose();
 //		testIteratorPrev();
 //		testGetSmaeKey();
 //		testSeek();
 //		testIterator();
 //		testDestory();
+	}
+
+	static volatile DB db;
+
+	public static void testCloseAndIteartor() throws IOException, InterruptedException {
+		Options options = new Options();
+		options.createIfMissing(true);
+		options.comparator(new DBComparator() {
+
+			@Override
+			public int compare(byte[] o1, byte[] o2) {
+				return new String(o1).compareTo(new String(o2));
+			}
+
+			@Override
+			public String name() {
+				return "Rezar";
+			}
+
+			@Override
+			public byte[] findShortestSeparator(byte[] start, byte[] limit) {
+				return start;
+			}
+
+			@Override
+			public byte[] findShortSuccessor(byte[] key) {
+				return key;
+			}
+		});
+		AtomicInteger count = new AtomicInteger(0);
+		File file = new File(FileUtils.getTempDirectory(), UUID.randomUUID().toString());
+		db = factory.open(file, options);
+		new Thread(() -> {
+			while (true) {
+				try {
+					for (int i = 0; i < 10000; i++) {
+						synchronized (db) {
+							db.put("1".getBytes(), "1".getBytes());
+							count.incrementAndGet();
+						}
+					}
+					TimeUnit.SECONDS.sleep(5);
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+			}
+		}, "WRITE_THREAD").start();
+		new Thread(() -> {
+			while (true) {
+				try {
+					DBIterator iterator = db.iterator();
+					iterator.seekToFirst();
+					int delCount = count.get() / 2;
+					while (iterator.hasNext() && delCount-- > 0) {
+						db.delete(iterator.next().getKey());
+						count.decrementAndGet();
+					}
+					synchronized (db) {
+						db.close();
+						db = factory.open(file, options);
+					}
+					TimeUnit.SECONDS.sleep(4);
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+			}
+		}, "CLOSE_THREAD").start();
+		new Thread(() -> {
+			while (true) {
+				try {
+					DBIterator iterator = null;
+					synchronized (db) {
+						iterator = db.iterator();
+					}
+					if (iterator.hasNext()) {
+						iterator.seek(iterator.next().getKey());
+					}
+					TimeUnit.MILLISECONDS.sleep(70);
+				} catch (Exception e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+
+			}
+		}, "ITERATOR_THREAD").start();
+
+		TimeUnit.MINUTES.sleep(10000);
+
 	}
 
 	public static void testIteratorForIdeaExtAudit() throws IOException {

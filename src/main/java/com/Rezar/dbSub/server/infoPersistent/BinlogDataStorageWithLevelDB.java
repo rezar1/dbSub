@@ -184,9 +184,30 @@ public class BinlogDataStorageWithLevelDB implements BinlogDataStorage, Runnable
 						TimeUnit.MILLISECONDS.sleep(RandomUtils.nextInt(500, 3500));
 						continue;
 					}
+					// 先保证seek的时候是正常的db和iterator
 					readLock.lockInterruptibly();
 					try {
 						dbIterator = db.iterator(readOptions);
+						if (this.lastReadOffset != null) {
+							dbIterator.seek(this.lastReadOffset.getBytes());
+							if (dbIterator.hasNext()) {
+								dbIterator.next();
+							} else {
+								// seek到了一个不存在的位置,等待binlog文件同步到当前位置
+								// this.lastReadOffset = null;
+								// 沉睡
+								log.warn(
+										"during runing , client with path:{} from offset:{} misMatch(curWriteSeqId:{}),try to sleep",
+										storageDir.getName(), this.lastReadOffset, curWriteSeqId);
+								TimeUnit.MILLISECONDS.sleep(RandomUtils.nextInt(570, 1500));
+								continue;
+							}
+						} else if (beginSeqId != null) {
+							log.info("MsgIterator :{} change lastReadOffset to beginSeqId:{}", storageDir.getName(),
+									new String(beginSeqId));
+							this.lastReadOffset = beginSeqId;
+							dbIterator.seek(this.lastReadOffset.getBytes());
+						}
 					} catch (Exception e) {
 						// 历史的db被清理了,直接循环从新的db开始读
 						log.info("1:{}:old db was closed , try sleep and continue with newDb", storageDir.getName());
@@ -194,26 +215,6 @@ public class BinlogDataStorageWithLevelDB implements BinlogDataStorage, Runnable
 						continue;
 					} finally {
 						readLock.unlock();
-					}
-					if (this.lastReadOffset != null) {
-						dbIterator.seek(this.lastReadOffset.getBytes());
-						if (dbIterator.hasNext()) {
-							dbIterator.next();
-						} else {
-							// seek到了一个不存在的位置,等待binlog文件同步到当前位置
-							// this.lastReadOffset = null;
-							// 沉睡
-							log.warn(
-									"during runing , client with path:{} from offset:{} misMatch(curWriteSeqId:{}),try to sleep",
-									storageDir.getName(), this.lastReadOffset, curWriteSeqId);
-							TimeUnit.MILLISECONDS.sleep(RandomUtils.nextInt(570, 1500));
-							continue;
-						}
-					} else if (beginSeqId != null) {
-						log.info("MsgIterator :{} change lastReadOffset to beginSeqId:{}", storageDir.getName(),
-								new String(beginSeqId));
-						this.lastReadOffset = beginSeqId;
-						dbIterator.seek(this.lastReadOffset.getBytes());
 					}
 				}
 				try {
