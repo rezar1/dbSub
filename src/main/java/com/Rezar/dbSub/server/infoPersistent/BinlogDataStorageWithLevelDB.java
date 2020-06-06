@@ -12,6 +12,9 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock.ReadLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock.WriteLock;
 import java.util.stream.StreamSupport;
 
 import org.apache.commons.io.IOUtils;
@@ -49,7 +52,9 @@ public class BinlogDataStorageWithLevelDB implements BinlogDataStorage, Runnable
 	private File storageDir;
 	private volatile DB db;
 	private Object newMsgLock = new Object();
-	private Object replaceDBDirLock = new Object();
+	private ReentrantReadWriteLock reopenRWLock = new ReentrantReadWriteLock(true);
+	private ReadLock readLock = reopenRWLock.readLock();
+	private WriteLock writeLock = reopenRWLock.writeLock();
 	private volatile String curWriteSeqId;
 	// 当前的表是第一次订阅的时候,本地也没有前一个写入的seqId,导致curWriteSeqId为null,下游接入
 	// 的时候也不知道从哪个地方开始继续同步(未指定fromOffset),所以这里添加一个逻辑
@@ -125,8 +130,11 @@ public class BinlogDataStorageWithLevelDB implements BinlogDataStorage, Runnable
 			this.curWriteSeqId = event.getSeqId();
 			// log.info("new event:{}", JacksonUtil.obj2Str(event));
 			byte[] serialize = this.syncEventSerializer.serialize(event);
-			synchronized (replaceDBDirLock) {
+			try {
+				readLock.lock();
 				this.db.put(event.getSeqId().getBytes(), serialize);
+			} finally {
+				readLock.unlock();
 			}
 			synchronized (newMsgLock) {
 				newMsgLock.notifyAll();
@@ -176,7 +184,17 @@ public class BinlogDataStorageWithLevelDB implements BinlogDataStorage, Runnable
 						TimeUnit.MILLISECONDS.sleep(RandomUtils.nextInt(500, 3500));
 						continue;
 					}
-					dbIterator = db.iterator(readOptions);
+					readLock.lockInterruptibly();
+					try {
+						dbIterator = db.iterator(readOptions);
+					} catch (Exception e) {
+						// 历史的db被清理了,直接循环从新的db开始读
+						log.info("1:{}:old db was closed , try sleep and continue with newDb", storageDir.getName());
+						TimeUnit.MILLISECONDS.sleep(RandomUtils.nextInt(100, 90));
+						continue;
+					} finally {
+						readLock.unlock();
+					}
 					if (this.lastReadOffset != null) {
 						dbIterator.seek(this.lastReadOffset.getBytes());
 						if (dbIterator.hasNext()) {
@@ -244,7 +262,10 @@ public class BinlogDataStorageWithLevelDB implements BinlogDataStorage, Runnable
 		if (fromOffset != null) {
 			ReadOptions readOptions = new ReadOptions();
 			readOptions.fillCache(false);
-			synchronized (replaceDBDirLock) {
+			boolean lock = false;
+			try {
+				this.readLock.lockInterruptibly();
+				lock = true;
 				DBIterator iterator = db.iterator(readOptions);
 				iterator.seekToFirst();
 				byte[] firstSeqId = null;
@@ -253,6 +274,12 @@ public class BinlogDataStorageWithLevelDB implements BinlogDataStorage, Runnable
 					log.warn("Too old seqId,unable to read from:" + fromOffset + ",server first seqId is:"
 							+ new String(firstSeqId));
 					return true;
+				}
+			} catch (InterruptedException e) {
+				log.error("InterruptedException:{}", e);
+			} finally {
+				if (lock) {
+					this.readLock.unlock();
 				}
 			}
 		}
@@ -297,15 +324,22 @@ public class BinlogDataStorageWithLevelDB implements BinlogDataStorage, Runnable
 				log.info("{} reOpenToClearDate set to:{}", this.storageDir.getName(),
 						DateUtils.formatyyyyMMddHHmmss(reOpenToClearDate));
 			} else if (new Date().compareTo(reOpenToClearDate) >= 0) {
-				synchronized (replaceDBDirLock) {
+				boolean lock = false;
+				try {
+					this.writeLock.lockInterruptibly();
+					lock = true;
 					// 关闭现有的,并且重开
-					try {
-						log.info("close and reopen in order to release dir:{}", this.storageDir.getName());
-						this.db.close();
-						this.db = this.initDbInfo(false);
-					} catch (IOException e) {
-						log.info("error while close dir:{}", storageDir.getAbsolutePath());
-						log.error("error while close dir:{}", e);
+					log.info("close and reopen in order to release dir:{}", this.storageDir.getName());
+					this.db.close();
+					this.db = this.initDbInfo(false);
+				} catch (InterruptedException e1) {
+					log.error("InterruptedException error while close dir:{}", e1);
+				} catch (IOException e) {
+					log.info("error while close dir:{}", storageDir.getAbsolutePath());
+					log.error("error while close dir:{}", e);
+				} finally {
+					if (lock) {
+						this.writeLock.unlock();
 					}
 				}
 				reOpenToClearDate = DateUtils.randomFutureDate(50, 120);
