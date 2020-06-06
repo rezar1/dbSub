@@ -227,7 +227,8 @@ public class BinlogDataStorageWithLevelDB implements BinlogDataStorage, Runnable
 							this.dbIterator = null;
 						}
 					}
-				} catch (org.iq80.leveldb.DBException e) {
+				} catch (Exception e) {
+					log.error("show error:{}", e);
 					// 历史的db被清理了,直接循环从新的db开始读
 					log.info("{}:old db was closed , try sleep and continue with newDb", storageDir.getName());
 					TimeUnit.MILLISECONDS.sleep(RandomUtils.nextInt(10, 30));
